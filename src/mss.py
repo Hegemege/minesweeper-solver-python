@@ -395,7 +395,7 @@ def game(width, height, mines):
 
         total.append(Ms)
 
-        solution = numpy.linalg.lstsq(rows, total)[0]
+        solution = numpy.linalg.lstsq(rows, total, rcond=None)[0]
 
         # Analyze the solution
         small = 1
@@ -460,4 +460,3 @@ def writeboard(board, AL, height, width, mines):
 
 if __name__ == "__main__":
     main()
-
