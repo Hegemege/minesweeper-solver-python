@@ -4,6 +4,15 @@ import timeit
 
 
 def main():
+    # benchmark()
+
+    board = Board()
+    position = board.configure(30, 16, BoardGenerationSettings(99, None, None, True))
+    board.grid[position[1]][position[0]].open()
+    print(board.str_revealed())
+
+
+def benchmark():
     print(
         "benchmark_board_link_neighbors",
         timeit.timeit(
@@ -25,7 +34,7 @@ def main():
 
 def setup_expert_board():
     board = Board()
-    board.configure(16, 30, BoardGenerationSettings(99))
+    board.configure(30, 16, BoardGenerationSettings(99))
     return board
 
 

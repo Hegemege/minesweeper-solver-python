@@ -50,6 +50,7 @@ class Cell:
         "y",
         "mine",
         "neighbor_mine_count",
+        "neighbor_flag_count",
         "neighbors",
         "state",
         "discovery_state",
@@ -58,6 +59,7 @@ class Cell:
     y: int
     mine: bool
     neighbor_mine_count: int
+    neighbor_flag_count: int
     neighbors: List[Cell]
     state: CellState
     discovery_state: CellDiscoveryState
@@ -71,8 +73,40 @@ class Cell:
     def reset(self):
         self.mine = False
         self.neighbor_mine_count = 0
+        self.neighbor_flag_count = 0
         self.state = CellState.Closed
         self.discovery_state = CellDiscoveryState.Undefined
+
+    def flag(self):
+        self.state = CellState.Flagged
+
+    def open(self):
+        self.state = CellState.Opened
+
+        # Opening a zero opens neighbors
+        if self.neighbor_mine_count == 0:
+            for neighbor in self.neighbors:
+                if neighbor.state == CellState.Closed:
+                    neighbor.open()
+
+    def str_real(self):
+        return (
+            "█"
+            if self.mine
+            else (
+                " " if self.neighbor_mine_count == 0 else str(self.neighbor_mine_count)
+            )
+        )
+
+    def str_revealed(self):
+        if self.state == CellState.Closed:
+            return "█"
+        elif self.state == CellState.Opened:
+            return (
+                " " if self.neighbor_mine_count == 0 else str(self.neighbor_mine_count)
+            )
+        elif self.state == CellState.Flagged:
+            return "■"
 
 
 class Board:
@@ -180,3 +214,13 @@ class Board:
                 neighbor.neighbor_mine_count += 1
 
         return start_position
+
+    def str_real(self):
+        return "\n".join(
+            ["".join([cell.str_real() for cell in row]) for row in self.grid]
+        )
+
+    def str_revealed(self):
+        return "\n".join(
+            ["".join([cell.str_revealed() for cell in row]) for row in self.grid]
+        )
