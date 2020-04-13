@@ -1,4 +1,4 @@
-from board import Board
+from board import Board, BoardGenerationSettings
 
 import timeit
 
@@ -25,7 +25,7 @@ def main():
 
 def setup_expert_board():
     board = Board()
-    board.configure(16, 30, 99)
+    board.configure(16, 30, BoardGenerationSettings(99))
     return board
 
 
