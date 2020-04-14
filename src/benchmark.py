@@ -8,7 +8,7 @@ def main():
 
     board = Board()
     position = board.configure(30, 16, BoardGenerationSettings(99, None, None, True))
-    board.grid[position[1]][position[0]].open()
+    # board.solve(position)
     print(board.str_revealed())
 
 

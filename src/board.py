@@ -51,18 +51,24 @@ class Cell:
         "mine",
         "neighbor_mine_count",
         "neighbor_flag_count",
+        "neighbor_opened_count",
+        "neighbor_count",
         "neighbors",
         "state",
         "discovery_state",
+        "satisfied",
     ]
     x: int
     y: int
     mine: bool
     neighbor_mine_count: int
     neighbor_flag_count: int
+    neighbor_opened_count: int
+    neighbor_count: int
     neighbors: List[Cell]
     state: CellState
     discovery_state: CellDiscoveryState
+    satisfied: bool
 
     def __init__(self, x, y):
         self.x = x
@@ -74,20 +80,25 @@ class Cell:
         self.mine = False
         self.neighbor_mine_count = 0
         self.neighbor_flag_count = 0
+        self.neighbor_opened_count = 0
+        self.neighbor_count = 0
         self.state = CellState.Closed
         self.discovery_state = CellDiscoveryState.Undefined
+        self.satisfied = False
 
-    def flag(self):
-        self.state = CellState.Flagged
+    def update_satisfied(self):
+        """
+            Updates the cell as satisfied if the conditions for it are met
+        """
+        if self.satisfied:
+            return
 
-    def open(self):
-        self.state = CellState.Opened
-
-        # Opening a zero opens neighbors
-        if self.neighbor_mine_count == 0:
-            for neighbor in self.neighbors:
-                if neighbor.state == CellState.Closed:
-                    neighbor.open()
+        if (
+            self.neighbor_mine_count == self.neighbor_flag_count
+            or self.neighbor_mine_count
+            == self.neighbor_count - self.neighbor_opened_count
+        ):
+            self.satisfied = True
 
     def str_real(self):
         return (
@@ -99,6 +110,8 @@ class Cell:
         )
 
     def str_revealed(self):
+        if self.satisfied:
+            return " "
         if self.state == CellState.Closed:
             return "█"
         elif self.state == CellState.Opened:
@@ -114,14 +127,27 @@ class Board:
     width: int
     height: int
     state: BoardState
+    opened_cells: int
+    generated_mines: int
 
     # The board is intended to be reused, no constructor required
     def __init__(self):
         self.grid = None
 
-        self.width = None
-        self.height = None
+        self.width = 0
+        self.height = 0
+        self.reset()
+
+    def reset(self):
         self.state = BoardState.Undefined
+        self.opened_cells = 0
+        self.generated_mines = 0
+
+    def configure_and_solve(
+        self, width: int, height: int, settings: BoardGenerationSettings
+    ):
+        start_position = self.configure(width, height, settings)
+        self.solve(start_position)
 
     def configure(self, width: int, height: int, settings: BoardGenerationSettings):
         """
@@ -130,7 +156,7 @@ class Board:
         """
         self.width = width
         self.height = height
-        self.state = BoardState.Undefined
+        self.reset()
 
         reconfigure = (
             self.grid is None or len(self.grid) != height or len(self.grid[0]) != width
@@ -144,6 +170,70 @@ class Board:
         self.reset_cells()
         start_position = self.generate_mines(settings)
         return start_position
+
+    def solve(self, start_position):
+        """
+            Solves the board from its current state using the given start position that will be opened.
+        """
+        print(self.width, self.height, self.generated_mines)
+        non_mine_cell_count = self.width * self.height - self.generated_mines
+
+        # Open the start position
+        self.open_at(start_position[0], start_position[1])
+
+        # Main loop
+        # Keep track of active cells and perform first-order solving
+
+        while self.state == BoardState.Undefined:
+            if self.opened_cells == non_mine_cell_count:
+                self.state = BoardState.Won
+                break
+
+
+    def flag_at(self, x, y):
+        cell = self.grid[y][x]
+        self.flag_cell(cell)
+
+    def flag_cell(self, cell):
+        if cell.state != CellState.Closed:
+            return
+
+        cell.state = CellState.Flagged
+        for neighbor in cell.neighbors:
+            neighbor.neighbor_flag_count += 1
+
+    def open_at(self, x, y):
+        cell = self.grid[y][x]
+        self.open_cell(cell)
+
+    def open_cell(self, cell):
+        if cell.state != CellState.Closed:
+            return
+
+        cell.state = CellState.Opened
+        self.opened_cells += 1
+
+        cell_flag_satisfied = cell.neighbor_mine_count == cell.neighbor_flag_count
+        cell_flag_remaining = (
+            cell.neighbor_mine_count == cell.neighbor_count - cell.neighbor_opened_count
+        )
+
+        # Inform neighbors that the cell has been opened
+        # Also perform quick-opens and flags for neighbors
+        # since we are already looping through them here
+        for neighbor in cell.neighbors:
+            neighbor.neighbor_opened_count += 1
+
+            # Opening a cell that is fully satisfied opens neighbors
+            if cell_flag_satisfied and neighbor.state == CellState.Closed:
+                self.open_cell(neighbor)
+
+            # Opening a cell that only has N mines around it and only
+            # N unopened cells remaining flags them all
+            if cell_flag_remaining and neighbor.state == CellState.Closed:
+                self.flag_cell(neighbor)
+
+        cell.update_satisfied()
 
     def link_neighbors(self) -> None:
         for y, row in enumerate(self.grid):
@@ -210,6 +300,7 @@ class Board:
         for position in mine_positions:
             x, y = position
             self.grid[y][x].mine = True
+            self.generated_mines += 1
             for neighbor in self.grid[y][x].neighbors:
                 neighbor.neighbor_mine_count += 1
 
