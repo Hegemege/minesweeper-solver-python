@@ -116,7 +116,11 @@ class Cell:
         )
 
     def str_revealed(self, hide=False):
-        if self.satisfied and hide:
+        if self.mine and self.state == CellState.Opened:
+            return "x"
+        elif self.state == CellState.Flagged:
+            return "■"
+        elif self.satisfied and hide:
             return " "
         elif self.state == CellState.Closed:
             return "█"
@@ -124,8 +128,6 @@ class Cell:
             return (
                 " " if self.neighbor_mine_count == 0 else str(self.neighbor_mine_count)
             )
-        elif self.state == CellState.Flagged:
-            return "■"
 
 
 class Board:
@@ -138,6 +140,7 @@ class Board:
     generated_mines: int
     settings: BoardGenerationSettings
     unknown_cell_lookup: dict
+    debug: bool
 
     # The board is intended to be reused, no constructor required
     def __init__(self):
@@ -161,7 +164,9 @@ class Board:
         start_position = self.configure(width, height, settings)
         self.solve(start_position)
 
-    def configure(self, width: int, height: int, settings: BoardGenerationSettings):
+    def configure(
+        self, width: int, height: int, settings: BoardGenerationSettings, debug=False
+    ):
         """
             Configures the board with the given settings and generates mines.  
             Returns the starting position as a Tuple[int, int]
@@ -170,6 +175,7 @@ class Board:
         self.width = width
         self.height = height
         self.settings = settings
+        self.debug = debug
 
         reconfigure = (
             self.grid is None or len(self.grid) != height or len(self.grid[0]) != width
@@ -188,7 +194,8 @@ class Board:
         """
             Solves the board from its current state using the given start position that will be opened.
         """
-        print("Solving with seed", self.settings.seed)
+        if self.debug:
+            print("Solving with seed", self.settings.seed)
 
         non_mine_cell_count = self.width * self.height - self.generated_mines
 
@@ -233,7 +240,7 @@ class Board:
             # If no cells were changed after second-order solving for
             # active cells, attempt second-order solving for all cells
             # and perform epsilon tests and find least probable cell to
-            # contain a mine for a random guess
+            # contain a mine for a random guess if needed
 
             solved_active = False
             # print(len(active_cells))
@@ -273,9 +280,7 @@ class Board:
             if solved_active:
                 continue
 
-            solved_active = self.solve_complex(remaining_cells, True, True)
-
-            break
+            self.solve_complex(remaining_cells, True, True)
 
     def solve_complex(self, cells: List[Cell], include_total=False, guess=False):
         """
@@ -310,6 +315,13 @@ class Board:
                 known_count += 1
 
         unknown_count = unknown_index
+
+        # If the unknown count or known count is 0, there are pockets of
+        # cells that are not reachable from current boundary
+        # Without adding the total row, this is impossible to solve
+        # If this was reached during the first solve_complex, pass the execution to the next
+        if not include_total and (unknown_count == 0 or known_count == 0):
+            return False
 
         # unknown_index is now the count of unknowns
         A_matrix = [[0 for i in range(unknown_count)] for j in range(known_count)]
@@ -360,7 +372,7 @@ class Board:
         # Clean the data
         for index, value in enumerate(X_vector):
             # If the value is close to 0 or truly negative
-            if value < 0.0001:
+            if abs(value) < 0.0001:
                 X_vector[index] = 0
 
             if abs(value - 1) < 0.0001:
@@ -383,7 +395,11 @@ class Board:
                 solved_active = True
                 self.open_cell(cell)
 
-            if least_probability > X_vector[unknown_index]:
+            # Find a smallest valid probability (> 0)
+            if (
+                least_probability > X_vector[unknown_index]
+                and X_vector[unknown_index] > 0
+            ):
                 least_probability = X_vector[unknown_index]
                 least_probable_cell = cell
 
@@ -392,6 +408,28 @@ class Board:
         # Last resort, pick the least probable cell in X_vector to open
         if not solved_active and guess:
             self.open_cell(least_probable_cell)
+
+            if self.debug:
+                if least_probable_cell.mine:
+                    print("Guessed wrong with probability", least_probability)
+                    print("Remaining mines", self.generated_mines - self.flagged_cells)
+                    print("X_vector:")
+                    for cell in cells:
+                        if cell.state == CellState.Closed or (
+                            cell.state == CellState.Opened and cell.mine
+                        ):
+                            unknown_index = self.unknown_cell_lookup[(cell.x, cell.y)][
+                                1
+                            ]
+
+                            print(cell.x, cell.y, X_vector[unknown_index])
+                else:
+                    print("Guessed right with probability", least_probability)
+                    print(least_probable_cell.x, least_probable_cell.y)
+
+                print()
+                print(self.str_revealed())
+                print()
 
         return solved_active
 
@@ -427,13 +465,14 @@ class Board:
         cell.state = CellState.Opened
         self.opened_cells += 1
 
-        del self.unknown_cell_lookup[(cell.x, cell.y)]
-
         # Test lose condition
         if cell.mine:
-            print("Opened mine at", cell.x, cell.y)
+            if self.debug:
+                print("Opened mine at", cell.x, cell.y)
             self.state = BoardState.Lost
             return
+
+        del self.unknown_cell_lookup[(cell.x, cell.y)]
 
         cell_flag_satisfied = cell.neighbor_mine_count == cell.neighbor_flag_count
         cell_flag_remaining = (
@@ -541,3 +580,15 @@ class Board:
         return "\n".join(
             ["".join([cell.str_revealed(hide) for cell in row]) for row in self.grid]
         )
+
+    def get_result(self):
+        return BoardResult(self.width, self.height, self.generated_mines, self.state)
+
+
+@dataclass
+class BoardResult:
+    __slots__ = ["width", "height", "mines", "state"]
+    width: int
+    height: int
+    mines: int
+    state: BoardState
