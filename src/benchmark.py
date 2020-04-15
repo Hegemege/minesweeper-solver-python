@@ -8,7 +8,7 @@ def main():
 
     board = Board()
     position = board.configure(
-        30, 16, BoardGenerationSettings(99, 7206524071910848918, None, True)
+        30, 16, BoardGenerationSettings(99, 7968747649060890293, None, True)
     )
 
     print(board.width, board.height, board.generated_mines)

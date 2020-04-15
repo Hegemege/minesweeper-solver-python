@@ -4,6 +4,9 @@ from dataclasses import dataclass
 from enum import Enum
 import random
 import sys
+import numpy.linalg
+import scipy.optimize, scipy.linalg
+import math
 
 
 class BoardState(Enum):
@@ -112,8 +115,10 @@ class Cell:
             )
         )
 
-    def str_revealed(self):
-        if self.state == CellState.Closed:
+    def str_revealed(self, hide=False):
+        if self.satisfied and hide:
+            return " "
+        elif self.state == CellState.Closed:
             return "█"
         elif self.state == CellState.Opened:
             return (
@@ -129,8 +134,10 @@ class Board:
     height: int
     state: BoardState
     opened_cells: int
+    flagged_cells: int
     generated_mines: int
     settings: BoardGenerationSettings
+    unknown_cell_lookup: dict
 
     # The board is intended to be reused, no constructor required
     def __init__(self):
@@ -143,8 +150,10 @@ class Board:
     def reset(self):
         self.state = BoardState.Undefined
         self.opened_cells = 0
+        self.flagged_cells = 0
         self.generated_mines = 0
         self.settings = None
+        self.unknown_cell_lookup = {}
 
     def configure_and_solve(
         self, width: int, height: int, settings: BoardGenerationSettings
@@ -186,13 +195,20 @@ class Board:
         # Keep track of remaining unsatisfied/solved cells
         remaining_cells: List[Cell] = [cell for row in self.grid for cell in row]
 
-        # Open the start position
-        self.open_at(start_position[0], start_position[1])
-
         # Keep track of active cells and perform first-order solving
         # A cell is active if one of it's neighbors has been opened
         # or if the cell itself has been opened
         active_cells: List[Cell] = []
+
+        # Build a lookup (x, y) -> (cell, index) for unknown cells
+        # The index will be updated manually and when cells are flagged or opened, they
+        # are removed from the lookup
+        self.unknown_cell_lookup = {}
+        for cell in remaining_cells:
+            self.unknown_cell_lookup[(cell.x, cell.y)] = [cell, 0]
+
+        # Open the start position
+        self.open_at(start_position[0], start_position[1])
 
         # Main loop
 
@@ -252,9 +268,132 @@ class Board:
             if solved_active:
                 continue
 
-            # Form the required matrix and vector to solve
-            # Ax = b
+            solved_active = self.solve_complex(active_cells)
 
+            if solved_active:
+                continue
+
+            solved_active = self.solve_complex(remaining_cells, True, True)
+
+            break
+
+    def solve_complex(self, cells: List[Cell], include_total=False, guess=False):
+        """
+            Form the required matrix and vector to solve
+            Ax = b
+
+            Matrix A [m*n] has columns for each active unopened cell and
+            rows for each active opened cell with 1s where the row's cell is
+            adjacent to the column's cell and otherwise 0
+
+            Vector B [1*n] has the remaining unflagged mine count for each opened cell
+            (row) of the matrix
+
+            Vector X [m*1] will have values indicating the existence of mines
+
+            If include_total is True, add a row [1, 1,..., 1]: mines_left
+            to the matrix to get some probability value for every closed cell
+        """
+
+        # Update the unknown lookup with proper indices
+        # Rows can be added to the matrix in the order they are in active_cells
+
+        solved_active = False
+
+        unknown_index = 0
+        known_count = 0
+        for cell in cells:
+            if cell.state == CellState.Closed:
+                self.unknown_cell_lookup[(cell.x, cell.y)][1] = unknown_index
+                unknown_index += 1
+            if cell.state == CellState.Opened:
+                known_count += 1
+
+        unknown_count = unknown_index
+
+        # unknown_index is now the count of unknowns
+        A_matrix = [[0 for i in range(unknown_count)] for j in range(known_count)]
+        B_vector = [
+            cell.neighbor_mine_count - cell.neighbor_flag_count
+            for cell in cells
+            if cell.state == CellState.Opened
+        ]
+
+        # Write values to the A matrix
+        known_index = 0
+        for cell in cells:
+            if cell.state != CellState.Opened:
+                continue
+
+            for neighbor in cell.neighbors:
+                if neighbor.state != CellState.Closed:
+                    continue
+
+                key = (neighbor.x, neighbor.y)
+                unknown_index = self.unknown_cell_lookup[key][1]
+                row_index = known_index
+
+                A_matrix[row_index][unknown_index] = 1
+
+            known_index += 1
+
+        # Add the 1 1 1 ... 1 = remaining_mines row at the bottom
+        if include_total:
+            B_vector.append(self.generated_mines - self.flagged_cells)
+            A_matrix.append([1 for i in range(unknown_count)])
+
+        # Find a least-squres solution to the equation
+        # X_vector, residuals, rank, singular_values = numpy.linalg.lstsq(
+        #    A_matrix, B_vector, rcond=None
+        # )
+
+        # Find a non-negative least-squares solution to the equation
+        # X_vector, residual = scipy.optimize.nnls(A_matrix, B_vector)
+        # PROBLEM: Returns only 0's and 1's, not anything in between
+        # -> reports uncertain cells as mines or non-mines
+
+        # Find a least-squres solution to the equation
+        X_vector, residuals, rank, singular_values = scipy.linalg.lstsq(
+            A_matrix, B_vector, check_finite=False
+        )
+
+        # Clean the data
+        for index, value in enumerate(X_vector):
+            # If the value is close to 0 or truly negative
+            if value < 0.0001:
+                X_vector[index] = 0
+
+            if abs(value - 1) < 0.0001:
+                X_vector[index] = 1
+
+        # Find sure mines to flag or cells to open
+        # Find the least probable cell for guessing, if needed
+        least_probable_cell = None
+        least_probability = math.inf
+        for cell in cells:
+            if cell.state != CellState.Closed:
+                continue
+
+            unknown_index = self.unknown_cell_lookup[(cell.x, cell.y)][1]
+
+            if X_vector[unknown_index] == 1:
+                solved_active = True
+                self.flag_cell(cell)
+            elif X_vector[unknown_index] == 0:
+                solved_active = True
+                self.open_cell(cell)
+
+            if least_probability > X_vector[unknown_index]:
+                least_probability = X_vector[unknown_index]
+                least_probable_cell = cell
+
+            # print(cell.x, cell.y, X_vector[unknown_index])
+
+        # Last resort, pick the least probable cell in X_vector to open
+        if not solved_active and guess:
+            self.open_cell(least_probable_cell)
+
+        return solved_active
 
     def flag_at(self, x, y):
         cell = self.grid[y][x]
@@ -269,6 +408,9 @@ class Board:
         cell.state = CellState.Flagged
         for neighbor in cell.neighbors:
             neighbor.neighbor_flag_count += 1
+
+        del self.unknown_cell_lookup[(cell.x, cell.y)]
+        self.flagged_cells += 1
 
         cell.update_satisfied()
 
@@ -285,8 +427,11 @@ class Board:
         cell.state = CellState.Opened
         self.opened_cells += 1
 
+        del self.unknown_cell_lookup[(cell.x, cell.y)]
+
         # Test lose condition
         if cell.mine:
+            print("Opened mine at", cell.x, cell.y)
             self.state = BoardState.Lost
             return
 
@@ -392,7 +537,7 @@ class Board:
             ["".join([cell.str_real() for cell in row]) for row in self.grid]
         )
 
-    def str_revealed(self):
+    def str_revealed(self, hide=False):
         return "\n".join(
-            ["".join([cell.str_revealed() for cell in row]) for row in self.grid]
+            ["".join([cell.str_revealed(hide) for cell in row]) for row in self.grid]
         )
