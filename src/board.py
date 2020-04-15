@@ -3,6 +3,7 @@ from typing import List, Callable, Optional, Tuple
 from dataclasses import dataclass
 from enum import Enum
 import random
+import sys
 
 
 class BoardState(Enum):
@@ -81,7 +82,6 @@ class Cell:
         self.neighbor_mine_count = 0
         self.neighbor_flag_count = 0
         self.neighbor_opened_count = 0
-        self.neighbor_count = 0
         self.state = CellState.Closed
         self.discovery_state = CellDiscoveryState.Undefined
         self.satisfied = False
@@ -94,9 +94,12 @@ class Cell:
             return
 
         if (
-            self.neighbor_mine_count == self.neighbor_flag_count
-            or self.neighbor_mine_count
-            == self.neighbor_count - self.neighbor_opened_count
+            self.state == CellState.Flagged
+            or self.neighbor_mine_count == self.neighbor_flag_count
+            or (
+                self.neighbor_mine_count
+                == self.neighbor_count - self.neighbor_opened_count
+            )
         ):
             self.satisfied = True
 
@@ -110,8 +113,6 @@ class Cell:
         )
 
     def str_revealed(self):
-        if self.satisfied:
-            return " "
         if self.state == CellState.Closed:
             return "█"
         elif self.state == CellState.Opened:
@@ -129,6 +130,7 @@ class Board:
     state: BoardState
     opened_cells: int
     generated_mines: int
+    settings: BoardGenerationSettings
 
     # The board is intended to be reused, no constructor required
     def __init__(self):
@@ -142,6 +144,7 @@ class Board:
         self.state = BoardState.Undefined
         self.opened_cells = 0
         self.generated_mines = 0
+        self.settings = None
 
     def configure_and_solve(
         self, width: int, height: int, settings: BoardGenerationSettings
@@ -154,9 +157,10 @@ class Board:
             Configures the board with the given settings and generates mines.  
             Returns the starting position as a Tuple[int, int]
         """
+        self.reset()
         self.width = width
         self.height = height
-        self.reset()
+        self.settings = settings
 
         reconfigure = (
             self.grid is None or len(self.grid) != height or len(self.grid[0]) != width
@@ -175,19 +179,81 @@ class Board:
         """
             Solves the board from its current state using the given start position that will be opened.
         """
-        print(self.width, self.height, self.generated_mines)
+        print("Solving with seed", self.settings.seed)
+
         non_mine_cell_count = self.width * self.height - self.generated_mines
+
+        # Keep track of remaining unsatisfied/solved cells
+        remaining_cells: List[Cell] = [cell for row in self.grid for cell in row]
 
         # Open the start position
         self.open_at(start_position[0], start_position[1])
 
-        # Main loop
         # Keep track of active cells and perform first-order solving
+        # A cell is active if one of it's neighbors has been opened
+        # or if the cell itself has been opened
+        active_cells: List[Cell] = []
+
+        # Main loop
 
         while self.state == BoardState.Undefined:
+            # Test win condition
             if self.opened_cells == non_mine_cell_count:
                 self.state = BoardState.Won
                 break
+
+            # Update remaining and active cells
+            remaining_cells = [cell for cell in remaining_cells if not cell.satisfied]
+
+            active_cells = [
+                cell
+                for cell in remaining_cells
+                if cell.neighbor_opened_count > 0 or cell.state == CellState.Opened
+            ]
+
+            # Loop through active cells and attempt first-order solving
+            # If no cells were changed, perform second-order solving
+            # for active cells only.
+            # If no cells were changed after second-order solving for
+            # active cells, attempt second-order solving for all cells
+            # and perform epsilon tests and find least probable cell to
+            # contain a mine for a random guess
+
+            solved_active = False
+            # print(len(active_cells))
+
+            for cell in active_cells:
+                cell_flag_satisfied = (
+                    cell.neighbor_mine_count == cell.neighbor_flag_count
+                )
+                cell_flag_remaining = (
+                    cell.neighbor_mine_count
+                    == cell.neighbor_count - cell.neighbor_opened_count
+                )
+
+                # If an opened cell has been satisfied, open remaining neighboring unflagged cells
+                if cell_flag_satisfied and cell.state == CellState.Opened:
+                    solved_active = True
+                    for neighbor in cell.neighbors:
+                        if neighbor.state == CellState.Closed:
+                            self.open_cell(neighbor)
+                    cell.update_satisfied()
+
+                # If an opened cell has the same number of unopened squares
+                # as the neighboring mine count, flag all neighbors
+                if cell_flag_remaining and cell.state == CellState.Opened:
+                    solved_active = True
+                    for neighbor in cell.neighbors:
+                        if neighbor.state == CellState.Closed:
+                            self.flag_cell(neighbor)
+                    cell.update_satisfied()
+
+            # Do not perform second-order solving if first-order solving is sufficient
+            if solved_active:
+                continue
+
+            # Form the required matrix and vector to solve
+            # Ax = b
 
 
     def flag_at(self, x, y):
@@ -198,9 +264,13 @@ class Board:
         if cell.state != CellState.Closed:
             return
 
+        # print("Flag", cell.x, cell.y, cell.neighbor_mine_count, cell.mine)
+
         cell.state = CellState.Flagged
         for neighbor in cell.neighbors:
             neighbor.neighbor_flag_count += 1
+
+        cell.update_satisfied()
 
     def open_at(self, x, y):
         cell = self.grid[y][x]
@@ -210,8 +280,15 @@ class Board:
         if cell.state != CellState.Closed:
             return
 
+        # print("Open", cell.x, cell.y, cell.neighbor_mine_count, cell.mine)
+
         cell.state = CellState.Opened
         self.opened_cells += 1
+
+        # Test lose condition
+        if cell.mine:
+            self.state = BoardState.Lost
+            return
 
         cell_flag_satisfied = cell.neighbor_mine_count == cell.neighbor_flag_count
         cell_flag_remaining = (
@@ -254,6 +331,7 @@ class Board:
                         cell.neighbors.append(self.grid[y + 1][x - 1])
                     if x < self.width - 1:
                         cell.neighbors.append(self.grid[y + 1][x + 1])
+                cell.neighbor_count = len(cell.neighbors)
 
     def reset_cells(self) -> None:
         for row in self.grid:
@@ -261,7 +339,10 @@ class Board:
                 cell.reset()
 
     def generate_mines(self, settings: BoardGenerationSettings) -> None:
-        # Seeds the RNG. If None, uses current time
+        # Seeds the RNG from settings. If None, assign a seed
+        # since the current seed cannot be retrieved from random
+        if settings.seed is None:
+            settings.seed = random.randrange(sys.maxsize)
         random.seed(settings.seed)
 
         if settings.start_position is not None:

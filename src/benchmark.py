@@ -7,9 +7,17 @@ def main():
     # benchmark()
 
     board = Board()
-    position = board.configure(30, 16, BoardGenerationSettings(99, None, None, True))
-    # board.solve(position)
+    position = board.configure(
+        30, 16, BoardGenerationSettings(99, 7206524071910848918, None, True)
+    )
+
+    print(board.width, board.height, board.generated_mines)
+
+    board.solve(position)
+
     print(board.str_revealed())
+    print()
+    print(board.str_real())
 
 
 def benchmark():
