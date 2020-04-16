@@ -5,6 +5,7 @@ import timeit
 import functools
 import sys
 import os
+import random
 
 
 def main():
@@ -13,23 +14,26 @@ def main():
     # debug(BoardSolver.ScipySparseLinalgLsqr)
     # exit()
 
-    benchmark_board(benchmark_easy, 1000, BoardSolver.ScipyLinalgLstsq)
-    # benchmark_board(benchmark_easy, 1000, BoardSolver.ScipyOptimizeLsqLinear)
-    # benchmark_board(benchmark_easy, 1000, BoardSolver.ScipySparseLinalgLsqr)
-    benchmark_board(benchmark_easy, 1000, BoardSolver.ScipySparseLinalgLsmr)
-
-    benchmark_board(benchmark_medium, 1000, BoardSolver.ScipyLinalgLstsq)
-    # benchmark_board(benchmark_medium, 1000, BoardSolver.ScipyOptimizeLsqLinear)
-    # benchmark_board(benchmark_medium, 1000, BoardSolver.ScipySparseLinalgLsqr)
-    benchmark_board(benchmark_medium, 1000, BoardSolver.ScipySparseLinalgLsmr)
-
-    benchmark_board(benchmark_expert, 1000, BoardSolver.ScipyLinalgLstsq)
-    # benchmark_board(benchmark_expert, 1000, BoardSolver.ScipyOptimizeLsqLinear)
-    # benchmark_board(benchmark_expert, 1000, BoardSolver.ScipySparseLinalgLsqr)
-    benchmark_board(benchmark_expert, 1000, BoardSolver.ScipySparseLinalgLsmr)
+    benchmark_all_solvers(repeats=100, shared_seeds=True, random_seed=123)
 
 
-def benchmark_board(board_benchmark, repeats, solver=BoardSolver.ScipyLinalgLstsq):
+def benchmark_all_solvers(repeats=1000, shared_seeds=False, random_seed=None):
+    random.seed(random_seed)
+    seeds = None
+    if shared_seeds:
+        seeds = [random.randrange(sys.maxsize) for i in range(repeats)]
+
+    board_setups = [benchmark_easy, benchmark_medium, benchmark_expert]
+    board_solvers = [enum for enum in BoardSolver]
+
+    for setup in board_setups:
+        for solver in board_solvers:
+            benchmark_board(setup, repeats, solver, seeds)
+
+
+def benchmark_board(
+    board_benchmark, repeats, solver=BoardSolver.ScipyLinalgLstsq, seeds=None
+):
     print("Running", board_benchmark.__name__)
     print("Repeats", repeats)
     print("Solver", solver)
@@ -42,7 +46,11 @@ def benchmark_board(board_benchmark, repeats, solver=BoardSolver.ScipyLinalgLsts
     # Disable stdout prints (scipy)
     sys.stdout = open(os.devnull, "w")
 
-    t = timeit.Timer(functools.partial(board_benchmark, board_results, True, solver))
+    copy_seeds = seeds[:] if seeds is not None else None
+
+    t = timeit.Timer(
+        functools.partial(board_benchmark, board_results, True, solver, copy_seeds)
+    )
     timeit_result = t.timeit(number=repeats)
 
     # Enable stdout prints again
@@ -67,33 +75,57 @@ def display_results(repeats, board_results: List[BoardResult], timeit_result):
 
 
 def benchmark_easy(
-    board_results, force_start_area=True, solver=BoardSolver.ScipyLinalgLstsq
+    board_results,
+    force_start_area=True,
+    solver=BoardSolver.ScipyLinalgLstsq,
+    seeds=None,
 ):
+    current_seed = get_next_seed(seeds)
     board = Board()
     board.configure_and_solve(
-        9, 9, BoardGenerationSettings(10, None, None, force_start_area), solver
+        9, 9, BoardGenerationSettings(10, current_seed, None, force_start_area), solver
     )
     board_results.append(board.get_result())
 
 
 def benchmark_medium(
-    board_results, force_start_area=True, solver=BoardSolver.ScipyLinalgLstsq
+    board_results,
+    force_start_area=True,
+    solver=BoardSolver.ScipyLinalgLstsq,
+    seeds=None,
 ):
+    current_seed = get_next_seed(seeds)
     board = Board()
     board.configure_and_solve(
-        16, 16, BoardGenerationSettings(40, None, None, force_start_area), solver
+        16,
+        16,
+        BoardGenerationSettings(40, current_seed, None, force_start_area),
+        solver,
     )
     board_results.append(board.get_result())
 
 
 def benchmark_expert(
-    board_results, force_start_area=True, solver=BoardSolver.ScipyLinalgLstsq
+    board_results,
+    force_start_area=True,
+    solver=BoardSolver.ScipyLinalgLstsq,
+    seeds=None,
 ):
+    current_seed = get_next_seed(seeds)
     board = Board()
     board.configure_and_solve(
-        30, 16, BoardGenerationSettings(99, None, None, force_start_area), solver
+        30,
+        16,
+        BoardGenerationSettings(99, current_seed, None, force_start_area),
+        solver,
     )
     board_results.append(board.get_result())
+
+
+def get_next_seed(seeds):
+    if seeds is not None and len(seeds) > 0:
+        return seeds.pop(0)
+    return None
 
 
 def debug(solver=BoardSolver.ScipyLinalgLstsq):
