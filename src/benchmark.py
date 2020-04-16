@@ -9,15 +9,23 @@ import random
 
 
 def main():
+    # For benchmarking and timing specific methods of the solving procedure
     # benchmark_methods()
 
+    # For debugging a specific solver with fixed seed
     # debug(BoardSolver.ScipySparseLinalgLsqr)
     # exit()
 
+    benchmark_board(benchmark_expert, 5000)
+    print()
+    print()
     benchmark_all_solvers(repeats=100, shared_seeds=True, random_seed=123)
 
 
 def benchmark_all_solvers(repeats=1000, shared_seeds=False, random_seed=None):
+    """
+        Runs basic benchmark on all basic board setups and solvers
+    """
     random.seed(random_seed)
     seeds = None
     if shared_seeds:
@@ -34,6 +42,10 @@ def benchmark_all_solvers(repeats=1000, shared_seeds=False, random_seed=None):
 def benchmark_board(
     board_benchmark, repeats, solver=BoardSolver.ScipyLinalgLstsq, seeds=None
 ):
+    """
+        Main benchmark for a board setup with configurable repeats, solver and seeds
+    """
+
     print("Running", board_benchmark.__name__)
     print("Repeats", repeats)
     print("Solver", solver)
@@ -149,7 +161,10 @@ def benchmark_methods():
         "benchmark_board_link_neighbors",
         timeit.timeit(
             stmt="benchmark_board_link_neighbors(board)",
-            setup="from __main__ import setup_expert_board,benchmark_board_link_neighbors; board = setup_expert_board()",
+            setup="""\
+from __main__ import setup_expert_board, benchmark_board_link_neighbors
+board = setup_expert_board()
+                """,
             number=1000,
         ),
     )
@@ -158,7 +173,10 @@ def benchmark_methods():
         "benchmark_board_reset_cells",
         timeit.timeit(
             stmt="benchmark_board_reset_cells(board)",
-            setup="from __main__ import setup_expert_board,benchmark_board_reset_cells; board = setup_expert_board()",
+            setup="""\
+from __main__ import setup_expert_board, benchmark_board_reset_cells
+board = setup_expert_board()
+                """,
             number=1000,
         ),
     )
