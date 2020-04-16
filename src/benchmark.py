@@ -9,6 +9,9 @@ import random
 
 
 def main():
+    global devnull
+    devnull = open(os.devnull, "w")
+
     # For benchmarking and timing specific methods of the solving procedure
     # benchmark_methods()
 
@@ -16,10 +19,15 @@ def main():
     # debug(BoardSolver.ScipySparseLinalgLsqr)
     # exit()
 
-    global devnull
-    devnull = open(os.devnull, "w")
+    # For benchmarking specific board setups
+    # run_benchmark(
+    #    benchmark_custom(26, 13, 84),
+    #    1000,
+    #    solver=BoardSolver.ScipyLinalgLstsq,
+    #    seeds=None,
+    # )
 
-    benchmark_board(benchmark_expert, 5000)
+    run_benchmark(benchmark_expert, 1000)
     print()
     print()
     benchmark_all_solvers(repeats=100, shared_seeds=True, random_seed=123)
@@ -39,17 +47,17 @@ def benchmark_all_solvers(repeats=1000, shared_seeds=False, random_seed=None):
 
     for setup in board_setups:
         for solver in board_solvers:
-            benchmark_board(setup, repeats, solver, seeds)
+            run_benchmark(setup, repeats, solver, seeds)
 
 
-def benchmark_board(
-    board_benchmark, repeats, solver=BoardSolver.ScipyLinalgLstsq, seeds=None
+def run_benchmark(
+    board_setup, repeats, solver=BoardSolver.ScipyLinalgLstsq, seeds=None
 ):
     """
         Main benchmark for a board setup with configurable repeats, solver and seeds
     """
 
-    print("Running", board_benchmark.__name__)
+    print("Running", board_setup.__name__)
     print("Repeats", repeats)
     print("Solver", solver)
     print("-" * 25)
@@ -64,7 +72,7 @@ def benchmark_board(
     copy_seeds = seeds[:] if seeds is not None else None
 
     t = timeit.Timer(
-        functools.partial(board_benchmark, board_results, True, solver, copy_seeds)
+        functools.partial(board_setup, board_results, True, solver, copy_seeds)
     )
     timeit_result = t.timeit(number=repeats)
 
@@ -89,18 +97,34 @@ def display_results(repeats, board_results: List[BoardResult], timeit_result):
     print("Win rate", win_rate)
 
 
+def benchmark_custom(width, height, mines):
+    def benchmark_board(
+        board_results,
+        force_start_area=True,
+        solver=BoardSolver.ScipyLinalgLstsq,
+        seeds=None,
+    ):
+        current_seed = get_next_seed(seeds)
+
+        board = Board()
+        board.configure_and_solve(
+            width,
+            height,
+            BoardGenerationSettings(mines, current_seed, None, force_start_area),
+            solver,
+        )
+        board_results.append(board.get_result())
+
+    return benchmark_board
+
+
 def benchmark_easy(
     board_results,
     force_start_area=True,
     solver=BoardSolver.ScipyLinalgLstsq,
     seeds=None,
 ):
-    current_seed = get_next_seed(seeds)
-    board = Board()
-    board.configure_and_solve(
-        9, 9, BoardGenerationSettings(10, current_seed, None, force_start_area), solver
-    )
-    board_results.append(board.get_result())
+    benchmark_custom(9, 9, 10)(board_results, force_start_area, solver, seeds)
 
 
 def benchmark_medium(
@@ -109,15 +133,7 @@ def benchmark_medium(
     solver=BoardSolver.ScipyLinalgLstsq,
     seeds=None,
 ):
-    current_seed = get_next_seed(seeds)
-    board = Board()
-    board.configure_and_solve(
-        16,
-        16,
-        BoardGenerationSettings(40, current_seed, None, force_start_area),
-        solver,
-    )
-    board_results.append(board.get_result())
+    benchmark_custom(16, 16, 40)(board_results, force_start_area, solver, seeds)
 
 
 def benchmark_expert(
@@ -126,15 +142,7 @@ def benchmark_expert(
     solver=BoardSolver.ScipyLinalgLstsq,
     seeds=None,
 ):
-    current_seed = get_next_seed(seeds)
-    board = Board()
-    board.configure_and_solve(
-        30,
-        16,
-        BoardGenerationSettings(99, current_seed, None, force_start_area),
-        solver,
-    )
-    board_results.append(board.get_result())
+    benchmark_custom(30, 16, 99)(board_results, force_start_area, solver, seeds)
 
 
 def get_next_seed(seeds):
