@@ -41,7 +41,7 @@ This is the 4th iteration of a minesweeper solver I've developed.
 
 | Year | Environment | Avg run time per board (Expert) | Avg win rate (Expert) | `Ax = b` solver |
 |---|---|---|---|---|
-| 2010 | C++ | ~1500ms | ~10% | `matrix.h` by Rondall Jones |
+| 2010 | C++ | ~1500ms | 7% | `matrix.h` by Rondall Jones |
 | 2015 | Python | 24ms | 27% | `numpy.linalg.lstsq` |
 | 2017 | C++ | - | - | Various (Eigen, Armadillo) |
 | 2020 | Python | 14.1ms | 31.4% | Various (`scipy`) |

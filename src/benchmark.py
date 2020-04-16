@@ -27,7 +27,9 @@ def main():
     #    seeds=None,
     # )
 
-    run_benchmark(benchmark_expert, 1000)
+    # Note: 10k expert boards reserves roughly 1GB of memory
+    # if garbage collect is not enabled
+    run_benchmark(benchmark_expert, 1000, enable_gc=True)
     print()
     print()
     benchmark_all_solvers(repeats=100, shared_seeds=True, random_seed=123)
@@ -51,7 +53,11 @@ def benchmark_all_solvers(repeats=1000, shared_seeds=False, random_seed=None):
 
 
 def run_benchmark(
-    board_setup, repeats, solver=BoardSolver.ScipyLinalgLstsq, seeds=None
+    board_setup,
+    repeats,
+    solver=BoardSolver.ScipyLinalgLstsq,
+    seeds=None,
+    enable_gc=False,
 ):
     """
         Main benchmark for a board setup with configurable repeats, solver and seeds
@@ -72,7 +78,8 @@ def run_benchmark(
     copy_seeds = seeds[:] if seeds is not None else None
 
     t = timeit.Timer(
-        functools.partial(board_setup, board_results, True, solver, copy_seeds)
+        functools.partial(board_setup, board_results, True, solver, copy_seeds),
+        "gc.enable()" if enable_gc else "",
     )
     timeit_result = t.timeit(number=repeats)
 
