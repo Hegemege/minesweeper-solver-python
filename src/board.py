@@ -4,14 +4,28 @@ from dataclasses import dataclass
 from enum import Enum
 import random
 import sys
+import numpy as np
 import numpy.linalg
 import scipy.optimize, scipy.linalg
 import math
 
 
 class BoardSolver(Enum):
-    ScipyLinalgLstsq = (0,)
+    # Fastest solver
+    # avg 14.1ms
+    # win 31.4%
+    ScipyLinalgLstsq = 0
+
+    # Best solver
+    # avg 200ms
+    # win 45%
     ScipyOptimizeLsqLinear = 1
+
+    # Performs similar to ScipyLingalgLstsq but slower
+    ScipySparseLinalgLsqr = 2
+
+    # Similar performance and speed to ScipySparseLinalgLsqr
+    ScipySparseLinalgLsmr = 3
 
 
 class BoardState(Enum):
@@ -403,6 +417,17 @@ class Board:
             )
 
             X_vector = optimize_result.x
+        elif self.solver == BoardSolver.ScipySparseLinalgLsqr:
+            # https://docs.scipy.org/doc/scipy/reference/generated/scipy.sparse.linalg.lsqr.html
+            # TODO: Attempt better performance by setting initial guess x0
+            X_vector = scipy.sparse.linalg.lsqr(
+                np.array(A_matrix), np.array(B_vector), show=False
+            )[0]
+        elif self.solver == BoardSolver.ScipySparseLinalgLsmr:
+            # https://docs.scipy.org/doc/scipy/reference/generated/scipy.sparse.linalg.lsmr.html
+            X_vector = scipy.sparse.linalg.lsmr(
+                np.array(A_matrix), np.array(B_vector), show=False
+            )[0]
         else:
             print("No solver configured")
             exit()

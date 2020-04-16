@@ -3,20 +3,30 @@ from typing import List
 
 import timeit
 import functools
+import sys
+import os
 
 
 def main():
     # benchmark_methods()
 
-    # debug()
+    # debug(BoardSolver.ScipySparseLinalgLsqr)
     # exit()
 
     benchmark_board(benchmark_easy, 1000, BoardSolver.ScipyLinalgLstsq)
-    benchmark_board(benchmark_easy, 1000, BoardSolver.ScipyOptimizeLsqLinear)
+    # benchmark_board(benchmark_easy, 1000, BoardSolver.ScipyOptimizeLsqLinear)
+    # benchmark_board(benchmark_easy, 1000, BoardSolver.ScipySparseLinalgLsqr)
+    benchmark_board(benchmark_easy, 1000, BoardSolver.ScipySparseLinalgLsmr)
+
     benchmark_board(benchmark_medium, 1000, BoardSolver.ScipyLinalgLstsq)
-    benchmark_board(benchmark_medium, 1000, BoardSolver.ScipyOptimizeLsqLinear)
+    # benchmark_board(benchmark_medium, 1000, BoardSolver.ScipyOptimizeLsqLinear)
+    # benchmark_board(benchmark_medium, 1000, BoardSolver.ScipySparseLinalgLsqr)
+    benchmark_board(benchmark_medium, 1000, BoardSolver.ScipySparseLinalgLsmr)
+
     benchmark_board(benchmark_expert, 1000, BoardSolver.ScipyLinalgLstsq)
-    benchmark_board(benchmark_expert, 1000, BoardSolver.ScipyOptimizeLsqLinear)
+    # benchmark_board(benchmark_expert, 1000, BoardSolver.ScipyOptimizeLsqLinear)
+    # benchmark_board(benchmark_expert, 1000, BoardSolver.ScipySparseLinalgLsqr)
+    benchmark_board(benchmark_expert, 1000, BoardSolver.ScipySparseLinalgLsmr)
 
 
 def benchmark_board(board_benchmark, repeats, solver=BoardSolver.ScipyLinalgLstsq):
@@ -29,8 +39,14 @@ def benchmark_board(board_benchmark, repeats, solver=BoardSolver.ScipyLinalgLsts
 
     # TODO: functools causes some delays
 
+    # Disable stdout prints (scipy)
+    sys.stdout = open(os.devnull, "w")
+
     t = timeit.Timer(functools.partial(board_benchmark, board_results, True, solver))
     timeit_result = t.timeit(number=repeats)
+
+    # Enable stdout prints again
+    sys.stdout = sys.__stdout__
 
     display_results(repeats, board_results, timeit_result)
 
@@ -80,11 +96,11 @@ def benchmark_expert(
     board_results.append(board.get_result())
 
 
-def debug():
+def debug(solver=BoardSolver.ScipyLinalgLstsq):
     board = Board()
     seed = 3283476030983952662
     position = board.configure(
-        30, 16, BoardGenerationSettings(99, seed, None, True), True
+        30, 16, BoardGenerationSettings(99, seed, None, True), solver, True
     )
 
     print(board.width, board.height, board.generated_mines)
