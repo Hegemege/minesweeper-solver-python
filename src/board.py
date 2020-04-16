@@ -9,6 +9,11 @@ import scipy.optimize, scipy.linalg
 import math
 
 
+class BoardSolver(Enum):
+    ScipyLinalgLstsq = (0,)
+    ScipyOptimizeLsqLinear = 1
+
+
 class BoardState(Enum):
     Undefined = 0
     Won = 1
@@ -141,6 +146,7 @@ class Board:
     settings: BoardGenerationSettings
     unknown_cell_lookup: dict
     debug: bool
+    solver: BoardSolver
 
     # The board is intended to be reused, no constructor required
     def __init__(self):
@@ -157,15 +163,30 @@ class Board:
         self.generated_mines = 0
         self.settings = None
         self.unknown_cell_lookup = {}
+        self.solver = None
 
     def configure_and_solve(
-        self, width: int, height: int, settings: BoardGenerationSettings
+        self,
+        width: int,
+        height: int,
+        settings: BoardGenerationSettings,
+        solver=BoardSolver.ScipyLinalgLstsq,
+        debug=False,
     ):
-        start_position = self.configure(width, height, settings)
+        """
+            Configure and solve the board with the given settings and solver.
+            The solver is used to find vector x from Ax = b
+        """
+        start_position = self.configure(width, height, settings, solver, debug)
         self.solve(start_position)
 
     def configure(
-        self, width: int, height: int, settings: BoardGenerationSettings, debug=False
+        self,
+        width: int,
+        height: int,
+        settings: BoardGenerationSettings,
+        solver=BoardSolver.ScipyLinalgLstsq,
+        debug=False,
     ):
         """
             Configures the board with the given settings and generates mines.  
@@ -176,6 +197,7 @@ class Board:
         self.height = height
         self.settings = settings
         self.debug = debug
+        self.solver = solver
 
         reconfigure = (
             self.grid is None or len(self.grid) != height or len(self.grid[0]) != width
@@ -354,6 +376,8 @@ class Board:
             B_vector.append(self.generated_mines - self.flagged_cells)
             A_matrix.append([1 for i in range(unknown_count)])
 
+        # Different attempts at libraries for solving Ax = b
+
         # Find a least-squres solution to the equation
         # X_vector, residuals, rank, singular_values = numpy.linalg.lstsq(
         #    A_matrix, B_vector, rcond=None
@@ -364,10 +388,24 @@ class Board:
         # PROBLEM: Returns only 0's and 1's, not anything in between
         # -> reports uncertain cells as mines or non-mines
 
-        # Find a least-squres solution to the equation
-        X_vector, residuals, rank, singular_values = scipy.linalg.lstsq(
-            A_matrix, B_vector, check_finite=False
-        )
+        if self.solver == BoardSolver.ScipyLinalgLstsq:
+            # Find a least-squares solution to the equation
+            X_vector, residuals, rank, singular_values = scipy.linalg.lstsq(
+                A_matrix, B_vector, check_finite=False
+            )
+        elif self.solver == BoardSolver.ScipyOptimizeLsqLinear:
+            # Find a least-squares solution with constraints
+            # method="trf" (default) gets stuck in infinite loop with default lsq_solver
+            # method="bvls" gets weird errors:
+            # ValueError: zero-size array to reduction operation maximum which has no identity
+            optimize_result = scipy.optimize.lsq_linear(
+                A_matrix, B_vector, bounds=(0.0, 1.0), method="trf", lsq_solver="lsmr"
+            )
+
+            X_vector = optimize_result.x
+        else:
+            print("No solver configured")
+            exit()
 
         # Clean the data
         for index, value in enumerate(X_vector):

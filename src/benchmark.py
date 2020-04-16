@@ -1,4 +1,4 @@
-from board import Board, BoardState, BoardResult, BoardGenerationSettings
+from board import Board, BoardState, BoardResult, BoardSolver, BoardGenerationSettings
 from typing import List
 
 import timeit
@@ -9,29 +9,32 @@ def main():
     # benchmark_methods()
 
     # debug()
+    # exit()
 
-    print("-" * 50)
-    benchmark_board(benchmark_easy, 1000)
-    print("-" * 50)
-    benchmark_board(benchmark_medium, 1000)
-    print("-" * 50)
-    benchmark_board(benchmark_expert, 1000)
-    print("-" * 50)
+    benchmark_board(benchmark_easy, 1000, BoardSolver.ScipyLinalgLstsq)
+    benchmark_board(benchmark_easy, 1000, BoardSolver.ScipyOptimizeLsqLinear)
+    benchmark_board(benchmark_medium, 1000, BoardSolver.ScipyLinalgLstsq)
+    benchmark_board(benchmark_medium, 1000, BoardSolver.ScipyOptimizeLsqLinear)
+    benchmark_board(benchmark_expert, 1000, BoardSolver.ScipyLinalgLstsq)
+    benchmark_board(benchmark_expert, 1000, BoardSolver.ScipyOptimizeLsqLinear)
 
 
-def benchmark_board(board_benchmark, repeats):
-
+def benchmark_board(board_benchmark, repeats, solver=BoardSolver.ScipyLinalgLstsq):
     print("Running", board_benchmark.__name__)
     print("Repeats", repeats)
-    print("-" * 50)
+    print("Solver", solver)
+    print("-" * 25)
 
     board_results = []
 
     # TODO: functools causes some delays
-    t = timeit.Timer(functools.partial(board_benchmark, board_results, True))
+
+    t = timeit.Timer(functools.partial(board_benchmark, board_results, True, solver))
     timeit_result = t.timeit(number=repeats)
 
     display_results(repeats, board_results, timeit_result)
+
+    print("-" * 50)
 
 
 def display_results(repeats, board_results: List[BoardResult], timeit_result):
@@ -47,33 +50,39 @@ def display_results(repeats, board_results: List[BoardResult], timeit_result):
     print("Win rate", win_rate)
 
 
-def benchmark_easy(board_results, force_start_area=True):
+def benchmark_easy(
+    board_results, force_start_area=True, solver=BoardSolver.ScipyLinalgLstsq
+):
     board = Board()
     board.configure_and_solve(
-        9, 9, BoardGenerationSettings(10, None, None, force_start_area)
+        9, 9, BoardGenerationSettings(10, None, None, force_start_area), solver
     )
     board_results.append(board.get_result())
 
 
-def benchmark_medium(board_results, force_start_area=True):
+def benchmark_medium(
+    board_results, force_start_area=True, solver=BoardSolver.ScipyLinalgLstsq
+):
     board = Board()
     board.configure_and_solve(
-        16, 16, BoardGenerationSettings(40, None, None, force_start_area)
+        16, 16, BoardGenerationSettings(40, None, None, force_start_area), solver
     )
     board_results.append(board.get_result())
 
 
-def benchmark_expert(board_results, force_start_area=True):
+def benchmark_expert(
+    board_results, force_start_area=True, solver=BoardSolver.ScipyLinalgLstsq
+):
     board = Board()
     board.configure_and_solve(
-        30, 16, BoardGenerationSettings(99, None, None, force_start_area)
+        30, 16, BoardGenerationSettings(99, None, None, force_start_area), solver
     )
     board_results.append(board.get_result())
 
 
 def debug():
     board = Board()
-    seed = 4114281364513937627
+    seed = 3283476030983952662
     position = board.configure(
         30, 16, BoardGenerationSettings(99, seed, None, True), True
     )
