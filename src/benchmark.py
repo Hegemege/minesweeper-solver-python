@@ -16,6 +16,9 @@ def main():
     # debug(BoardSolver.ScipySparseLinalgLsqr)
     # exit()
 
+    global devnull
+    devnull = open(os.devnull, "w")
+
     benchmark_board(benchmark_expert, 5000)
     print()
     print()
@@ -56,7 +59,7 @@ def benchmark_board(
     # TODO: functools causes some delays
 
     # Disable stdout prints (scipy)
-    sys.stdout = open(os.devnull, "w")
+    toggle_output(False)
 
     copy_seeds = seeds[:] if seeds is not None else None
 
@@ -66,7 +69,7 @@ def benchmark_board(
     timeit_result = t.timeit(number=repeats)
 
     # Enable stdout prints again
-    sys.stdout = sys.__stdout__
+    toggle_output(True)
 
     display_results(repeats, board_results, timeit_result)
 
@@ -138,6 +141,11 @@ def get_next_seed(seeds):
     if seeds is not None and len(seeds) > 0:
         return seeds.pop(0)
     return None
+
+
+def toggle_output(on):
+    global devnull
+    sys.stdout = sys.__stdout__ if on else devnull
 
 
 def debug(solver=BoardSolver.ScipyLinalgLstsq):
